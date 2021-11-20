@@ -1,7 +1,7 @@
 import torch
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
-from ..common.registrable import Registrable
+from ..utilities.registrable import Registrable
 
 
 class Metric(Registrable):
@@ -15,7 +15,7 @@ class Metric(Registrable):
     def __call__(self, *args, **kwargs):
         raise NotImplementedError
 
-    def get_metric(self, reset: bool) -> Union[float, Tuple[float, ...], Dict[str, float], Dict[str, List[float]]]:
+    def get_metric(self, reset: bool):
         """
         Compute and return the metric. Optionally also call `self.reset`.
         The metric value must be numeric.
