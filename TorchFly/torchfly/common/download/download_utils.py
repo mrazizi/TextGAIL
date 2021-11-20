@@ -37,6 +37,6 @@ def gdrive_download(url, folder, filename):
     os.makedirs(cache_dir, exist_ok=True)
 
     filepath = os.path.join(cache_dir, filename)
-    gdown.cached_download(url, filepath, quiet=False)
+    gdown.download(url, filepath, quiet=False)
 
     return filepath
