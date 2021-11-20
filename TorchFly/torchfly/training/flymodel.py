@@ -62,7 +62,7 @@ class FlyModel(nn.Module):
         lr = self.config.training.optimization.learning_rate
         optimizer_name = self.config.training.optimization.optimizer_name
         max_gradient_norm = self.config.training.optimization.max_gradient_norm
-        betas = self.config.training.optimization.betas if self.config.training.optimization.betas else (0.9, 0.999)
+        betas = self.config.training.optimization.betas if self.config.training.optimization.get("betas") else (0.9, 0.999)
 
         if optimizer_name == "AdamW":
             optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=lr, betas=betas)
