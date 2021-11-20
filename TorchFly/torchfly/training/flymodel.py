@@ -88,7 +88,7 @@ class FlyModel(nn.Module):
 
         scheduler_name = self.config.training.scheduler.scheduler_name
         warmup_steps = self.config.training.scheduler.warmup_steps
-        warmup_cycle = self.config.training.scheduler.warmup_cosine_cycle
+        warmup_cycle = self.config.training.scheduler.get("warmup_cosine_cycle", None)
 
         if scheduler_name == "Constant":
             scheduler = ConstantLRSchedule(optimizer)
