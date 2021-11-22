@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Union
 import os
 import sys
 import time
@@ -7,11 +7,10 @@ import torch
 import pickle
 import logging
 from omegaconf import DictConfig
-# from apex import amp
 
 from ..events import Events
 from ..callback import Callback, handle_event
-from ....utils.distributed import get_rank
+from ....distributed import get_rank
 
 logger = logging.getLogger("resumer")
 
@@ -24,15 +23,16 @@ class Resume(Callback):
     """
     Callback that resumes the training from a checkpoint
     """
+
     def __init__(self, config: DictConfig) -> None:
         super().__init__(config)
-        self.storage_dir = self.config.training.checkpointing.directory
+        self.storage_dir = self.config.checkpointing.directory
         self.restored_states = None
 
     @handle_event(Events.INITIALIZE, priority=199)
     def setup(self, trainer: Trainer):
         # Search for the latest checkpoint
-        if self.config.training.resume.resume:
+        if self.config.resume.resume:
             logger.info("Try to restore the latest checkpoint")
             self.restored_states = self.restore_latest_checkpoint(self.storage_dir)
 
@@ -45,12 +45,12 @@ class Resume(Callback):
         else:
             self.restored_states = None
 
-    @handle_event(Events.TRAIN_BEGIN, priority=170)
+    @handle_event(Events.INITIALIZE, priority=1000)
     def load_checkpoint(self, trainer: Trainer):
         # Resume the training
-        if self.restored_states and self.config.training.resume.resume:
+        if self.restored_states and self.config.resume.resume:
             # Load Model State
-            if self.config.training.resume.resume_model:
+            if self.config.resume.resume_model:
                 trainer.set_model_state(self.restored_states[0])
             # Load Everything Else
             trainer.set_trainer_state(self.restored_states[1])
@@ -58,7 +58,7 @@ class Resume(Callback):
             file_path = self.restored_states[2]
             print(f"RANK {get_rank()} has loaded checkpoint at {file_path}!")
 
-    def restore_latest_checkpoint(self, dirpath) -> [Dict, None]:
+    def restore_latest_checkpoint(self, dirpath) -> Union[Dict, None]:
         """
         Returns:
             state_dict: return the checkpoint's state dict. None if there is nothing.

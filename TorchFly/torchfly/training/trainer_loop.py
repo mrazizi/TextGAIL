@@ -6,23 +6,24 @@ import numpy as np
 import tqdm
 import torch
 import torch.nn as nn
-import torch.distributed
+import torch.distributed as dist
 from torch.cuda.amp import GradScaler, autocast
 from omegaconf import DictConfig, OmegaConf
 import socket
-import apex
-from apex import amp
-from apex.parallel import DistributedDataParallel, Reducer
+# import apex
+# from apex import amp
+# from apex.parallel import DistributedDataParallel, Reducer
 # from torch.nn.parallel import DistributedDataParallel
 
 # local imports
 import torchfly
-from torchfly.utils.distributed import barrier
+from torchfly.distributed import barrier
 from torchfly.training.callbacks import Callback, CallbackHandler, Events
 from torchfly.training.callbacks import Checkpoint, Evaluation, Console, Resume
 from torchfly.flylogger.train_logger import TrainLogger
-from torchfly.common import move_to_device
+from torchfly.utilities import move_to_device
 from torchfly.training import FlyModel
+from torchfly.training.reducer import Reducer
 
 import logging
 
@@ -60,13 +61,13 @@ class TrainerLoop:
             torch.distributed.init_process_group(backend='nccl', init_method='env://')
             assert torch.distributed.is_initialized()
 
-        if self.distributed_training:
+        if self.distributed_training and not torch.distributed.is_initialized():
             self.node_rank = os.environ.get("NODE_RANK", "N/A")
             logger.info(
                 f"Initialized Rank:{torch.distributed.get_rank()} Locak-rank: {self.local_rank} on Node:{self.node_rank} Node-name:{socket.gethostname()}"
             )
 
-        logger.info("TrainerLoop is starting!")
+        logger.info("TrainerLoop is initializing!")
 
         # set cuda device
         if config.training.num_gpus_per_node > 0:
@@ -76,7 +77,7 @@ class TrainerLoop:
             self.device = torch.device("cpu")
 
         # Setup the dataloders
-        self.train_dataloader = train_dataloader_fn()
+        self.train_dataloader = train_dataloader_fn() if train_dataloader_fn else None
         # only rank 0 can setup validation and test dataloder
         if self.rank == 0:
             self.validation_dataloader: Iterable = valid_dataloader_fn() if valid_dataloader_fn else None
@@ -97,7 +98,7 @@ class TrainerLoop:
         self.global_batch_count = 0
         self.global_step_count = 0
         self.epochs_trained = 0
-        self.epoch_step_count = 0
+        self.local_step_count = 0
 
         # Configure optimizers
         self.optimizers, self.schedulers = self.model.configure_optimizers(self.total_num_update_steps)
@@ -172,8 +173,9 @@ class TrainerLoop:
             self.eval_callback = Evaluation(self.config)
             self.add_callback(self.eval_callback)
 
-            self.console_callback = Console(self.config)
-            self.add_callback(self.console_callback)
+            if self.config.training.console:
+                self.console_callback = Console(self.config)
+                self.add_callback(self.console_callback)
 
             self.checkpoint_callback = Checkpoint(self.config)
             self.add_callback(self.checkpoint_callback)
@@ -188,6 +190,8 @@ class TrainerLoop:
         # Distributed training (should be after apex fp16 initialization)
         self.distributed_training = True
         self.reducer = Reducer(self.model)
+        # for param in self.model.parameters():
+        #     dist.broadcast(param.data, 0)
 
         # self.model = DistributedDataParallel(self.model, delay_allreduce=True)
         # trainer.model = torch.nn.parallel.DistributedDataParallel(
@@ -220,7 +224,10 @@ class TrainerLoop:
         self.optimizer = self.optimizers[0]
         self.scheduler = self.schedulers[0]
 
-        self.epoch_step_count = 0
+        self.local_step_count = 0
+
+        if self.train_dataloader is None:
+            return
 
         for batch in self.train_dataloader:
             self.callback_handler.fire_event(Events.BATCH_BEGIN)
@@ -233,7 +240,7 @@ class TrainerLoop:
                 # Update the model with optimizer
                 self.step_update(self.model, self.optimizer, self.scheduler)
                 self.global_step_count += 1
-                self.epoch_step_count += 1
+                self.local_step_count += 1
 
             self.callback_handler.fire_event(Events.BATCH_END)
 
@@ -339,7 +346,7 @@ class TrainerLoop:
     def set_trainer_state(self, trainer_state_dict):
         self.epochs_trained = trainer_state_dict["epochs_trained"]
         self.global_step_count = trainer_state_dict["global_step_count"]
-        self.epoch_step_count = trainer_state_dict["epoch_step_count"]
+        self.local_step_count = trainer_state_dict["local_step_count"]
 
         # Resume the training state
         if self.config.training.resume.resume:
@@ -352,7 +359,13 @@ class TrainerLoop:
                         if self.rank == 0:
                             logger.warning(f"Cannot Load Scheduler {idx}'s State!")
 
-            self.schedulers[0].state_dict()
+            if self.config.training.resume.resume_optimizer:
+                for idx, optimizer in enumerate(self.optimizers):
+                    try:
+                        optimizer.load_state_dict(trainer_state_dict["optimizers_state_dict"][idx])
+                    except:
+                        if self.rank == 0:
+                            logger.warning(f"Cannot Load Optimizer {idx}'s State!")
 
             # save amp states
             if self.fp16:
@@ -375,7 +388,7 @@ class TrainerLoop:
         trainer_state_dict = {
             "epochs_trained": self.epochs_trained,
             "global_step_count": self.global_step_count,
-            "epoch_step_count": self.epoch_step_count,
+            "local_step_count": self.local_step_count,
             "optimizers_state_dict": [optimizer.state_dict() for optimizer in self.optimizers],
             "schedulers_state_dict": [scheduler.state_dict() for scheduler in self.schedulers],
             "cpu_rng_state": torch.get_rng_state(),
