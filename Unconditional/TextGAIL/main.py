@@ -26,8 +26,8 @@ def main(config=None):
     dataloader_handler = DataLoaderHandler(config)
 
     model = TextGAILModel(config)
-    model_weights = torch.load(config.task.weights_path)
-    model.generator.load_state_dict(model_weights, strict=False)
+    # model_weights = torch.load(config.task.weights_path)
+    # model.generator.load_state_dict(model_weights, strict=False)
     model = model.cuda()
 
     # Register your transformer for decoding

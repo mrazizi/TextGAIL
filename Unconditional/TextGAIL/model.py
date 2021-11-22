@@ -54,8 +54,8 @@ class Generator(FlyModel):
         self._perplexity = Average()
 
         # load pretrained weights
-        # model_weights = get_pretrained_weights("roberta-tokenized-gpt2")
-        # print(self.encoder.load_state_dict(model_weights, strict=False))
+        model_weights = get_pretrained_weights("roberta-tokenized-gpt2")
+        print(self.encoder.load_state_dict(model_weights, strict=False))
         self.rl_mode = True
 
 
