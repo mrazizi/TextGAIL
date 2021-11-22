@@ -6,7 +6,7 @@ torch
 ray==0.8.2
 regex
 transformers==2.5.1
-hydra-core
+hydra-core==1.0.0
 hydra-colorlog
 colorlog==4.1.0
 tensorboard
