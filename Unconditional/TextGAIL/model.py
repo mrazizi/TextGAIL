@@ -6,7 +6,7 @@ from transformers import AutoTokenizer, RobertaForMultipleChoice
 
 import torchfly
 from torchfly.nn.transformers import GPT2LMHeadModel
-from torchfly.training import FlyModule
+from torchfly.training import FlyModel
 from torchfly.nn.losses import SequenceCrossEntropyLoss
 from torchfly.metrics import Average
 from torchfly.common.download import get_pretrained_weights
@@ -17,7 +17,7 @@ from torchfly.text.decode import TransformerDecoder
 # pylint: disable=no-member
 
 
-class TextGAILModel(FlyModule):
+class TextGAILModel(FlyModel):
     def __init__(self, config):
         super().__init__(config)
         self.generator = Generator(config)
@@ -42,7 +42,7 @@ class TextGAILModel(FlyModule):
         metrics = {"perplexity": ppl}
         return metrics
 
-class Generator(FlyModule):
+class Generator(FlyModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
@@ -134,7 +134,7 @@ class Generator(FlyModule):
         return self.criterion(logits.view(-1, logits.size(-1)), target.view(-1))
 
 
-class Discriminator(FlyModule):
+class Discriminator(FlyModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
